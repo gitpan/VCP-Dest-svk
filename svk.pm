@@ -50,7 +50,7 @@ The directory for branches. default is branches.
 
 =cut
 use strict;
-our $VERSION = '0.26' ;
+our $VERSION = '0.27' ;
 our @ISA = qw( VCP::Dest );
 
 use SVN::Core;
@@ -349,6 +349,10 @@ sub commit {
 	$anchor = $anchor ? $copath.$anchor : $thisco;
 	my @targets = ($use_anchor || $#{$revs} > 100) ? ($anchor)
 	    : map { "$copath/".$_->name } @$revs;
+
+        no warnings 'redefine';
+        require SVK::Command::Commit;
+        local *SVK::Command::Commit::loc = sub { $_[0] };
 	$self->{SVK}->commit ('--direct', '--import',
 			      '-m', $revs->[0]->comment || '** no comments **',
 			      @targets);

@@ -1,11 +1,13 @@
-# http://module-build.sourceforge.net/META-spec.html
-#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
-name:         Data-Hierarchy
-version:      0.13
-version_from: Hierarchy.pm
-installdirs:  site
-requires:
-    Clone:                         0
-
+name: VCP-Dest-svk
+version: 0.27
+abstract: VCP destination driver for svn/svk
+author: Chia-liang Kao <clkao@clkao.org>
+license: perl
 distribution_type: module
-generated_by: ExtUtils::MakeMaker version 6.17
+requires:
+  VCP: 0.9
+  SVK: 0.20
+no_index:
+  directory:
+    - inc
+generated_by: Module::Install version 0.35
