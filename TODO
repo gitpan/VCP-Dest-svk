@@ -4,8 +4,16 @@
 
 ** Support labels (cvs tags).
 
+** Branches
+
+*** Keep branches in checkout rather than switching back and forth.
+
+*** Implement cvs complicated branching.
+
 ** More tests.
 
 * VCP::Source::cvs
 
-** optimize checkout instead of individual fetching
+** optimize checkout instead of individual fetching.
+
+** use signatures to skip unmodified cvs files scanning.

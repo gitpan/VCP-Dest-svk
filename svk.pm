@@ -10,10 +10,14 @@ VCP::Dest::svk - svk destination driver
    vcp <source> svk:/path/to/repos:path --init-repos
    vcp <source> svk:/path/to/repos:path --init-repos --delete-repos
 
+   # source could be cvs:/path/to/cvsrepos:module/... or
+   # cvs::pserver:anonymous@cvs.server.org:/repos:module/...
+
 =head1 DESCRIPTION
 
-This driver allows L<vcp|vcp> to insert revisions in to a SVN
-repository via the svk interface.
+This driver allows L<vcp|vcp> to insert revisions in to a Subversion
+repository via the svk interface. You could use the L<vcp> command
+line interface or the integrated L<SVK> mirror command.
 
 =head1 OPTIONS
 
@@ -46,7 +50,7 @@ The directory for branches. default is branches.
 
 =cut
 use strict;
-our $VERSION = '0.23' ;
+our $VERSION = '0.24' ;
 our @ISA = qw( VCP::Dest );
 
 use SVN::Core;
@@ -204,15 +208,19 @@ sub compare_base_revs {
    die "\$source_path not set at ", caller
       unless defined $source_path;
 
+   my ($prefix, $name, $rev ) =
+       $self->rev_map->get ( [ $r->source_repo_id, $r->id ] );
+   my $root = $self->{SVK_REPOS}->fs->revision_root ($rev);
+
+   # dead rev is fine
+   return if -z $source_path && $root->check_path ("$prefix/$name") == $SVN::Node::none;
+
    open FH, '<', $source_path or die "$!: $source_path" ;
    my $source_digest = md5( \*FH ) ;
 
-   my ($prefix, $name, $rev ) =
-       $self->rev_map->get ( [ $r->source_repo_id, $r->id ] );
-   my $dest_digest = $self->{SVK_REPOS}->fs->revision_root ($rev)->
-       file_md5_checksum ("$prefix/$name");
+   my $dest_digest = $root->file_md5_checksum ("$prefix/$name");
 
-   lg "$r checking out ", $r->as_string, "as $prefix/$name\@$rev from svk dest repo";
+   lg "$r checking out ", $r->as_string, " as $prefix/$name\@$rev from svk dest repo";
 
    die( "vcp: base revision\n",
        $rev->as_string, "\n",
@@ -295,9 +303,6 @@ sub commit {
     my $branch = $revs->[0]->branch_id || '';
     my $coroot = $self->work_path ("co");
 
-    $self->{SVK}->checkout ("/$self->{SVK_TRUNKPATH}", $coroot)
-	unless -d $coroot;
-
     unless ($self->{SVK_NOLAYOUT} || defined $self->{SVK_TRUNK}) {
 	unless (defined ($self->{SVK_TRUNK} = $root->node_prop
 			 ($self->{SVK_TRUNKPATH}, 'vcp:trunk'))) {
@@ -309,18 +314,22 @@ sub commit {
 
     my $thisbranch = ($self->{SVK_NOLAYOUT} || $branch eq $self->{SVK_TRUNK})
 	? "/$self->{SVK_TRUNKPATH}" : "/$self->{SVK_BRANCHPATH}/$branch";
+    my $thisco = ($self->{SVK_NOLAYOUT} || $branch eq $self->{SVK_TRUNK})
+	? $self->work_path ('trunk') : $self->work_path ('branches', $branch);
 
     if ($root->check_path ($thisbranch) == $SVN::Node::none) {
 	$self->handle_branchpoint ($branch, $root, $revs);
     }
     else {
-	if ($self->{SVK_LAST_BRANCH} && $thisbranch ne $self->{SVK_LAST_BRANCH}) {
-	    $self->{SVK}->switch ($thisbranch, $coroot);
-	    lg "switch $thisbranch $coroot\n";
-	    die $self->{SVK_OUTPUT}
-		if $self->{SVK_OUTPUT} =~ m/ - skipped$/;
+	if (!-e $coroot || ($self->{SVK_LAST_BRANCH} && $thisbranch ne $self->{SVK_LAST_BRANCH})) {
+	    unlink ($coroot) if -e $coroot;
+	    unless (-d $thisco) {
+		$self->mkpdir ($thisco);
+		$self->{SVK}->checkout ($thisbranch, $thisco);
+		lg "checking out $thisbranch to $thisco";
+	    }
+	    symlink ($thisco, $coroot) or die "$thisco -> $coroot: $!";
 	}
-	$self->{SVK_LAST_BRANCH} = $thisbranch;
 
 	$self->handle_branching ($thisbranch, $revs);
 	my $copath = $self->work_path ('co');
@@ -346,6 +355,7 @@ sub commit {
 
 =cut
 
+	$self->{SVK_LAST_BRANCH} = $thisbranch;
 
     }
 
@@ -408,8 +418,9 @@ sub handle_branchpoint {
     my $work_path = $self->work_path ('branch');
     for (@branchfrom) {
 	my ($branchfrom, $branchfromrev, $branchrevs, $anchor) = @$_;
-	unless (-e $work_path) {
-	    $self->{SVK}->checkout ('-N', "/$self->{SVK_BRANCHPATH}", $work_path);
+	unless (-e "$work_path/$branch") {
+	    $self->{SVK}->checkout ('-N', "/$self->{SVK_BRANCHPATH}", $work_path)
+		unless -e $work_path;
 	    die "branch already exist on branchpoint" if -d "$work_path/$branch";
 	    if ($anchor) {
 		my $anchor_path = $self->work_path( "branch", $branch, $anchor );
@@ -422,6 +433,7 @@ sub handle_branchpoint {
 		$self->{SVK}->copy ('-r', $branchfromrev, $branchfrom,
 				    $self->work_path ( 'branch', $branch));
 	    }
+	    lg "branch $branch copied from $branchfrom:$branchfromrev";
 	    debug "copy result:\n$self->{SVK_OUTPUT}" if debugging;
 	    # do fixup for things not in $branchrevs
 	    my %copied;
@@ -436,8 +448,8 @@ sub handle_branchpoint {
 		debug "remove: $path" if debugging;
 		$self->{SVK}->delete ($path) if -e $path;
 	    }
-	    rename ($coroot, "$coroot.backup");
-	    symlink ("$work_path/$branch", $coroot);
+	    unlink ($coroot) if -e $coroot;
+	    symlink ("$work_path/$branch", $coroot) or die $!;
 	}
 	else {
 	    # copy $branchrevs from $branch{from,rev} to co
@@ -447,14 +459,19 @@ sub handle_branchpoint {
 	$self->prepare_commit ($branch, $root, $branchrevs);
     }
     $self->{SVK}->commit ('--direct', '-m', $revs->[0]->comment || 'bzz', $self->work_path ('branch'));
-    unlink ($coroot);
     rmtree [$work_path];
-    rename ("$coroot.backup", $coroot);
+    unlink ($coroot);
 }
 
 sub prepare_commit {
     my ($self, $prefix, $root, $revs) = @_;
     my $anchor;
+    my @fetch_rev = grep {!$_->is_placeholder_rev &&
+			      ($_->action eq 'add' || $_->action eq 'edit') } @$revs;
+
+    my @source_fns = $revs->[0]->source->can ('get_source_files') ?
+	$revs->[0]->source->get_source_files (@fetch_rev) :
+	    map {$_->get_source_file} @fetch_rev;
     for my $r (@$revs) {
 	next if $r->is_placeholder_rev;
 	if (defined $anchor) {
@@ -472,7 +489,7 @@ sub prepare_commit {
 	unlink $work_path if -e $work_path;
 
 	if ($r->action eq 'add' || $r->action eq 'edit' ) {
-	    my $source_fn = $r->get_source_file;
+	    my $source_fn = shift @source_fns;
 	    $self->mkpdir( $work_path );
 	    link $source_fn, $work_path
 		or die "$! linking '$source_fn' -> '$work_path'" ;
@@ -523,6 +540,150 @@ sub sort_filters {
 	     ),
 	   );
 }
+
+=head1 AUTHORS
+
+Chia-liang Kao E<lt>clkao@clkao.orgE<gt>
+
+=head1 COPYRIGHT
+
+Copyright 2004 by Chia-liang Kao E<lt>clkao@clkao.orgE<gt>.
+
+This program is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+See L<http://www.perl.com/perl/misc/Artistic.html>
+
+=cut
+
+package VCP::Source::cvs;
+use VCP::Debug qw( :debug ) ;
+use VCP::Logger qw( lg );
+
+# use cvs up -D for a derived timestamp, and if it does something bad that is discovered
+# by cvs status output, fallback to individual fetching
+
+sub _fix_state {
+    my ($self, $state, $file) = @_;
+
+    my $cvsroot = $self->repo_id;
+    $cvsroot =~ s/^.*://;
+    $state->{file} =~ s|^$cvsroot/||;
+    $state->{file} =~ s|Attic/([^/]+)$|$1|;
+
+    return unless exists $file->{$state->{file}};
+
+    my $r = $file->{$state->{file}};
+    debug "doing $state->{file} $state->{rev}" if debugging;
+    if ($r->rev_id eq $state->{rev}) {
+	my $wp = $self->work_path( "revs", $r->source_name, $r->source_rev_id );
+	$self->mkpdir( $wp ) ;
+	use File::Copy;
+	copy($state->{file}, $wp) or die "copy failed: $! ";
+    }
+    else {
+	lg "fallback to individual checkout: $state->{rev} vs ".$r->rev_id;
+	my $fn = $self->get_source_file ($r);
+    }
+    delete $file->{$state->{file}};
+}
+
+sub _cvs_status_output {
+    my ($self, $fh, $file) = @_;
+    my $state;
+
+    while (<$fh>) {
+	if (m|^===================================================================|) {
+	    $self->_fix_state($state, $file) if $state;
+	    $state = {};
+	}
+	elsif (m/Working revision:\s+([\d\.]+)/) {
+	    $state->{rev} = $1;
+	}
+	elsif (m/Repository revision:\s+[\d\.]+\s+(.*),v/) {
+	    $state->{file} = $1;
+	}
+    }
+    $self->_fix_state($state, $file) if $state;
+}
+
+sub get_source_files {
+    my VCP::Source::cvs $self = shift ;
+    my $max_time = 0;
+    my %file;
+    my $common_parent;
+    my $common_offset;
+
+    return map $self->get_source_file( $_ ), @_
+	if $self->{CVS_PARSE_RCS_FILES} || $#_ < 3;
+
+#    $self->create_cvs_workspace unless
+
+    lg "fast checkout";
+
+    my $samerev = $_[0]->rev_id;
+    for my $r (@_) {
+	my $t = $r->time ;
+	$max_time = $t if $t >= $max_time;
+	my $cvs_name = $self->SUPER::denormalize_name( $r->source_name );
+	$file{$cvs_name} = $r;
+
+	if (!$common_parent) {
+	    $common_parent = $cvs_name;
+	    $common_parent =~ s|/[^/]+$|/|;
+	    $common_offset = index ($common_parent, '/') + 1;
+	}
+	elsif (index ($common_parent, '/', $common_offset) > 0) {
+	    $common_parent =~ s|/[^/]+/$|/|
+		while substr($cvs_name, 0, length($common_parent))
+			     ne $common_parent;
+	}
+
+	undef $samerev if $samerev && $r->rev_id ne $_[0]->rev_id;
+    }
+
+    chop $common_parent;
+    local $@;
+    eval {
+    $self->cvs(['update', '-d', $samerev ? ('-r', $_[0]->rev_id) :
+		('-D', VCP::Rev::iso8601format($max_time), 
+		 $_[0]->branch_id ? ('-r', $_[0]->branch_id) : ()), $common_parent]);
+    $self->cvs(['status', $common_parent], undef, sub { $self->_cvs_status_output(@_, \%file) });
+    };
+
+    lg "fast update error: $@, fallback to iteration"
+	if $@;
+
+    return map $self->get_source_file( $_ ), @_ if $@;
+
+    $self->get_source_file ($_) for values %file;
+
+    return map { $self->work_path( "revs", $_->source_name, $_->source_rev_id ) ; } @_;
+}
+
+=head1 NOTES
+
+=over
+
+=item
+
+Since VCP is not currently available on CPAN, you could get a dist
+with fixes from L:<http://wagner.elixus.org/~clkao/VCP-0.9-clkao.tar.gz>
+
+=item
+
+C<VCP::Dest::svk> uses branch info to decide the path in the resulting
+repository.  So source repository with branches denoted by path names
+like Perforce should normalize the path name and branch info. see
+L<SVN::Mirror::VCP> for example.
+
+=back
+
+=head1 SEE ALSO
+
+L<SVK>, L<SVK::Command::Mirror>, L<VCP>, L<VCP::Source::cvs>, L<VCP::Source::p4>
+
+L<http://svk.elixus.org/index.cgi?MirrorVCP>
 
 =head1 AUTHORS
 

@@ -1,3 +1,11 @@
+[Changes for 0.24 - 24 Jul, 2004]
+
+* Don't switch between branches, use symlink to make conversion faster.
+
+* Bring back the cvs grouped checkout optimization from last year.
+
+* Don't try to retrieve dead revs when comparing base revs.
+
 [Changes for 0.23 - 17 Jul, 2004]
 
 * Detect invalid switch properly.
