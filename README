@@ -1,0 +1,24 @@
+This is the README file for VCP::Dest::svk, the VCP destination driver
+for svn repositories using the SVK module.
+
+* Installation
+
+VCP::Dest::svk uses the stanard perl module install process:
+
+% perl Makefile.PL
+% make
+# make install
+
+* Latest version
+
+The latest VCP-Dest-svk could be found on cpan or at:
+http://svn.elixus.org/svnweb/repos/browse/member/clkao/VCP-Dest-svk/
+
+* Copyright
+
+Copyright 2004 by Chia-liang Kao clkao@clkao.org.
+
+This program is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+See <http://www.perl.com/perl/misc/Artistic.html>.
