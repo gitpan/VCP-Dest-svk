@@ -1,3 +1,14 @@
+[Changes for 0.22 - 13 Jul, 2004]
+
+Performance improvement:
+
+* Use descendent anchors for importing when possible.
+
+* Give svkpath to SVK::XD to make use of the checkout_delta cache in SVK.
+
+* For vendor import on subtree, don't copy the whole tree and then
+  delete the others.
+
 [Changes for 0.21 - 5 Jul, 2004]
 
 Fix compilation and document all options.

@@ -1,0 +1,11 @@
+* VCP::Dest::svk
+
+** Directory pruning.
+
+** Support labels (cvs tags).
+
+** More tests.
+
+* VCP::Source::cvs
+
+** optimize checkout instead of individual fetching

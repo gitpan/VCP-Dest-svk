@@ -46,7 +46,7 @@ The directory for branches. default is branches.
 
 =cut
 use strict;
-our $VERSION = '0.21' ;
+our $VERSION = '0.22' ;
 our @ISA = qw( VCP::Dest );
 
 use SVN::Core;
@@ -109,6 +109,7 @@ sub init_repos {
 
     $self->{SVK_REPOS} = SVN::Repos::create ($self->{SVK_REPOSPATH},  undef, undef, undef,
 					     {'bdb-txn-nosync' => '1',
+					      'fs-type' => $ENV{SVNFSTYPE} || 'bdb',
 					      'bdb-log-autoremove' => '1'});
 }
 
@@ -185,6 +186,7 @@ sub init {
    $self->{SVK} = SVK->new ( output => \$self->{SVK_OUTPUT},
 			     xd => SVK::XD->new
 			     ( depotmap => {'' => $self->{SVK_REPOSPATH}},
+			       svkpath => $self->{SVK_REPOSPATH},
 			       checkout => Data::Hierarchy->new ));
 
    my $coroot = $self->work_path ("co");
@@ -309,7 +311,7 @@ sub commit {
 	? "/$self->{SVK_TRUNKPATH}" : "/$self->{SVK_BRANCHPATH}/$branch";
 
     if ($root->check_path ($thisbranch) == $SVN::Node::none) {
-	$self->handle_branchpoint ($branch, $revs);
+	$self->handle_branchpoint ($branch, $root, $revs);
     }
     else {
 	if ($self->{SVK_LAST_BRANCH} && $thisbranch ne $self->{SVK_LAST_BRANCH}) {
@@ -320,15 +322,28 @@ sub commit {
 	$self->{SVK_LAST_BRANCH} = $thisbranch;
 
 	$self->handle_branching ($thisbranch, $revs);
-	$self->prepare_commit ($thisbranch, $revs);
+	my $copath = $self->work_path ('co');
+	my $anchor = $self->prepare_commit ($thisbranch, $root, $revs);
 
 	$self->{SVK}->import ('--direct', '--force',
 			      '-m', $revs->[0]->comment || '** no comments **',
-			      $thisbranch, $self->work_path ("co"));
+			      $thisbranch.$anchor, $copath.$anchor);
 	debug "import result:\n$self->{SVK_OUTPUT}" if debugging;
-	$self->{SVK}->status ($self->work_path ("co"));
+
+=for comment
+
+	$self->{SVK}->status ($copath.$anchor);
+
+	if ($self->{SVK_OUTPUT}) {
+	    debug  "import to /$anchor $copath$anchor";
+	    debug YAML::Dump ($self->{SVK}{xd});
+	}
 	die "not identical after import to $thisbranch: $self->{SVK_OUTPUT}"
 	    if $self->{SVK_OUTPUT};
+
+=cut
+
+
     }
 
     my $rev = $fs->youngest_rev;
@@ -352,6 +367,7 @@ sub commit {
 sub deduce_branchparent {
     my ($self, $revs) = @_;
     my $branchinfo;
+    my $anchor;
     for my $r (@$revs) {
 	my $pr_id = $r->previous_id;
 	die "branchpoint has something without previous" if empty $pr_id;
@@ -361,31 +377,48 @@ sub deduce_branchparent {
 
 	$branchinfo->{$pprefix} = $prev
 	    if !$branchinfo->{$pprefix} || $prev > $branchinfo->{$pprefix};
+
+	if (defined $anchor) {
+	    while ($anchor && "$anchor/" ne substr ($r->name, 0, length ($anchor)+1)) {
+		(undef,$anchor,undef) = File::Spec->splitpath( $anchor );
+		$anchor =~ s|/$||g;
+	    }
+	}
+	else {
+	    (undef,$anchor,undef) = File::Spec->splitpath( $r->name );
+	    $anchor =~ s|/$||g;
+	}
     }
 
     if (keys %$branchinfo != 1) {
 	die "complicated branchpoint not handled yet";
     }
-    for my $path (keys %$branchinfo) {
-	my $rev = $branchinfo->{$path};
-	# XXX: verify the latest rev is still in range for all revs
-	return ([$path, $rev, $revs]);
-    }
 
-    return ([undef, undef, $revs]);
+    # XXX: verify the latest rev is still in range for all revs
+    return ([%$branchinfo, $revs, $anchor]);
 }
 
 sub handle_branchpoint {
-    my ($self, $branch, $revs) = @_;
+    my ($self, $branch, $root, $revs) = @_;
     my $coroot = $self->work_path ("co");
     my (@branchfrom) = $self->deduce_branchparent ($revs);
     my $work_path = $self->work_path ('branch');
     for (@branchfrom) {
-	my ($branchfrom, $branchfromrev, $branchrevs) = @$_;
+	my ($branchfrom, $branchfromrev, $branchrevs, $anchor) = @$_;
 	unless (-e $work_path) {
 	    $self->{SVK}->checkout ('-N', "/$self->{SVK_BRANCHPATH}", $work_path);
-	    die if -d "$work_path/$branch";
-	    $self->{SVK}->copy ('-r', $branchfromrev, $branchfrom, "$work_path/$branch");
+	    die "branch already exist on branchpoint" if -d "$work_path/$branch";
+	    if ($anchor) {
+		my $anchor_path = $self->work_path( "branch", $branch, $anchor );
+		$self->mkpdir ($anchor_path);
+		$self->{SVK}->add ($self->work_path ( "branch", $branch));
+		$self->{SVK}->copy ('-r', $branchfromrev, "$branchfrom/$anchor",
+				    $self->work_path ( 'branch', $branch, $anchor));
+	    }
+	    else {
+		$self->{SVK}->copy ('-r', $branchfromrev, $branchfrom,
+				    $self->work_path ( 'branch', $branch));
+	    }
 	    debug "copy result:\n$self->{SVK_OUTPUT}" if debugging;
 	    # do fixup for things not in $branchrevs
 	    my %copied;
@@ -406,9 +439,9 @@ sub handle_branchpoint {
 	else {
 	    # copy $branchrevs from $branch{from,rev} to co
 	    die "complicated branching at a batch not implemented yet";
-	    $self->handle_branching ("$self->{SVK_BRNACHPATH}/$branch", $branchrevs);
+	    $self->handle_branching ($branch, $branchrevs);
 	}
-	$self->prepare_commit ("$self->{SVK_BRANCHPATH}/$branch", $branchrevs);
+	$self->prepare_commit ($branch, $root, $branchrevs);
     }
     $self->{SVK}->commit ('--direct', '-m', $revs->[0]->comment || 'bzz', $self->work_path ('branch'));
     unlink ($coroot);
@@ -417,10 +450,21 @@ sub handle_branchpoint {
 }
 
 sub prepare_commit {
-    my ($self, $prefix, $revs) = @_;
-
+    my ($self, $prefix, $root, $revs) = @_;
+    my $anchor;
     for my $r (@$revs) {
 	next if $r->is_placeholder_rev;
+	if (defined $anchor) {
+	    while ($anchor && ("$anchor/" ne substr ($r->name, 0, length ($anchor)+1)
+		   || $root->check_path ("$prefix/$anchor") == $SVN::Node::none)) {
+		(undef,$anchor,undef) = File::Spec->splitpath( $anchor );
+		$anchor =~ s|/$||g;
+	    }
+	}
+	else {
+	    (undef,$anchor,undef) = File::Spec->splitpath( $r->name );
+	    $anchor =~ s|/$||g;
+	}
 	my $work_path = $self->work_path( "co", $r->name ) ;
 	unlink $work_path if -e $work_path;
 
@@ -431,6 +475,7 @@ sub prepare_commit {
 		or die "$! linking '$source_fn' -> '$work_path'" ;
 	}
     }
+    return $anchor ? "/$anchor" : '';
 }
 
 sub handle_branching {
