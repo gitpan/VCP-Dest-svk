@@ -50,7 +50,7 @@ The directory for branches. default is branches.
 
 =cut
 use strict;
-our $VERSION = '0.25' ;
+our $VERSION = '0.26' ;
 our @ISA = qw( VCP::Dest );
 
 use SVN::Core;
@@ -294,8 +294,8 @@ sub update_revision_prop {
     }
     $fs->change_rev_prop($rev, 'svn:author', $r->user_id || 'unknown_user');
 
-    $self->{SVK_COMMIT_CALLBACK}->($rev, $r->source_change_id)
-	if $r->source_change_id && $self->{SVK_COMMIT_CALLBACK};
+    $self->{SVK_COMMIT_CALLBACK}->($rev, defined $r->source_change_id ? $r->source_change_id : $rev)
+	if $self->{SVK_COMMIT_CALLBACK};
 }
 
 sub commit {

@@ -1,3 +1,8 @@
+[Changes for 0.26 - 19 Sep, 2004]
+
+* assign orig rev also when there's none.  This makes mirrors from cvs
+  more relay-friendly.
+
 [Changes for 0.25 - 4 Sep, 2004]
 
 * Use a default pool in compare_base_rev.
