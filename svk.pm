@@ -30,11 +30,23 @@ If C<--init-repos> is passed and the target directory is not empty, it
 will be deleted.  THIS IS DANGEROUS AND SHOULD ONLY BE USED IN TEST
 ENVIRONMENTS.
 
+=item --nolayout
+
+Do not create conventional layout for trunk and branches.
+
+=item --trunk-dir
+
+The directory for trunk. default is trunk.
+
+=item --branch-dir
+
+The directory for branches. default is branches.
+
 =back
 
 =cut
-ues strict;
-our $VERSION = '0.20' ;
+use strict;
+our $VERSION = '0.21' ;
 our @ISA = qw( VCP::Dest );
 
 use SVN::Core;
@@ -103,6 +115,7 @@ sub init_repos {
 sub init_layout {
     my $self = shift;
     my $fs = $self->{SVK_REPOS}->fs;
+    my $pool = SVN::Pool->new_default;
     my $root = $fs->revision_root ($fs->youngest_rev);
 
     my ($trunk, $branch) = @{$self}{qw/SVK_TRUNKPATH SVK_BRANCHPATH/};
@@ -313,7 +326,6 @@ sub commit {
 			      '-m', $revs->[0]->comment || '** no comments **',
 			      $thisbranch, $self->work_path ("co"));
 	debug "import result:\n$self->{SVK_OUTPUT}" if debugging;
-	$self->{SVK}->update ($self->work_path ("co"));
 	$self->{SVK}->status ($self->work_path ("co"));
 	die "not identical after import to $thisbranch: $self->{SVK_OUTPUT}"
 	    if $self->{SVK_OUTPUT};
@@ -398,7 +410,6 @@ sub handle_branchpoint {
 	}
 	$self->prepare_commit ("$self->{SVK_BRANCHPATH}/$branch", $branchrevs);
     }
-    $self->{SVK}->status ($coroot);
     $self->{SVK}->commit ('--direct', '-m', $revs->[0]->comment || 'bzz', $self->work_path ('branch'));
     unlink ($coroot);
     rmtree [$work_path];
@@ -465,5 +476,19 @@ sub sort_filters {
 	   );
 }
 
+=head1 AUTHORS
+
+Chia-liang Kao E<lt>clkao@clkao.orgE<gt>
+
+=head1 COPYRIGHT
+
+Copyright 2004 by Chia-liang Kao E<lt>clkao@clkao.orgE<gt>.
+
+This program is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+See L<http://www.perl.com/perl/misc/Artistic.html>
+
+=cut
 
 1;
