@@ -1,3 +1,11 @@
+[Changes for 0.28 - 17 Oct, 2004]
+
+* Fetch source on all revisions except 'delete' ones,
+  as p4 source generate 'integrate' actions.
+  (Though this was fixed in later VCP)
+
+* Allow copying from the same branch.
+
 [Changes for 0.27 - 4 Oct, 2004]
 
 * Fix post-commit check when using localized environemtn. [Autrijus]

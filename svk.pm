@@ -50,7 +50,7 @@ The directory for branches. default is branches.
 
 =cut
 use strict;
-our $VERSION = '0.27' ;
+our $VERSION = '0.28' ;
 our @ISA = qw( VCP::Dest );
 
 use SVN::Core;
@@ -471,8 +471,7 @@ sub handle_branchpoint {
 sub prepare_commit {
     my ($self, $prefix, $root, $revs) = @_;
     my $anchor;
-    my @fetch_rev = grep {!$_->is_placeholder_rev &&
-			      ($_->action eq 'add' || $_->action eq 'edit') } @$revs;
+    my @fetch_rev = grep {!$_->is_placeholder_rev && $_->action ne 'delete' } @$revs;
 
     my @source_fns = $revs->[0]->source->can ('get_source_files') ?
 	$revs->[0]->source->get_source_files (@fetch_rev) :
@@ -492,7 +491,7 @@ sub prepare_commit {
 	my $work_path = $self->work_path( "co", $r->name ) ;
 	unlink $work_path if -e $work_path;
 
-	if ($r->action eq 'add' || $r->action eq 'edit' ) {
+	if ($r->action ne 'delete') {
 	    my $source_fn = shift @source_fns;
 	    $self->mkpdir( $work_path );
 	    link $source_fn, $work_path
@@ -512,15 +511,14 @@ sub handle_branching {
 	my $fn = $r->name ;
 	my $work_path = $self->work_path( "co", $fn ) ;
 
+	local $@;
 	my ( $pprefix, $pname, $prev ) = eval {
 	     $self->rev_map->get( [ $r->source_repo_id, $pr_id ] ) };
 	if ($@) {
 	    pr "abandon branch source $pr_id for ".$r->as_string;
 	    $r->action ('add');
-	    undef $@;
 	    next;
 	}
-	next if $pprefix eq $prefix;
 
 	my $dir = $self->mkpdir ($work_path);
 	my $anchor = $r->name;

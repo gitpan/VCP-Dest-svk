@@ -1,5 +1,5 @@
 name: VCP-Dest-svk
-version: 0.27
+version: 0.28
 abstract: VCP destination driver for svn/svk
 author: Chia-liang Kao <clkao@clkao.org>
 license: perl
