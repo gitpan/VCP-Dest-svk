@@ -1,3 +1,9 @@
+[Changes for 0.23 - 17 Jul, 2004]
+
+* Detect invalid switch properly.
+
+* Run update after import on anchor to make the checkout map compat.
+
 [Changes for 0.22 - 13 Jul, 2004]
 
 Performance improvement:

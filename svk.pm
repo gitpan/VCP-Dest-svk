@@ -46,7 +46,7 @@ The directory for branches. default is branches.
 
 =cut
 use strict;
-our $VERSION = '0.22' ;
+our $VERSION = '0.23' ;
 our @ISA = qw( VCP::Dest );
 
 use SVN::Core;
@@ -316,19 +316,22 @@ sub commit {
     else {
 	if ($self->{SVK_LAST_BRANCH} && $thisbranch ne $self->{SVK_LAST_BRANCH}) {
 	    $self->{SVK}->switch ($thisbranch, $coroot);
-	    die "$self->{SVK_OUTPUT}"
-		if $self->{SVK_OUTPUT} =~ m/skip/;
+	    lg "switch $thisbranch $coroot\n";
+	    die $self->{SVK_OUTPUT}
+		if $self->{SVK_OUTPUT} =~ m/ - skipped$/;
 	}
 	$self->{SVK_LAST_BRANCH} = $thisbranch;
 
 	$self->handle_branching ($thisbranch, $revs);
 	my $copath = $self->work_path ('co');
 	my $anchor = $self->prepare_commit ($thisbranch, $root, $revs);
+	lg "import $thisbranch$anchor $copath$anchor (".(1+$#{$revs})." files)";
 
 	$self->{SVK}->import ('--direct', '--force',
 			      '-m', $revs->[0]->comment || '** no comments **',
 			      $thisbranch.$anchor, $copath.$anchor);
 	debug "import result:\n$self->{SVK_OUTPUT}" if debugging;
+	$self->{SVK}->update ($copath) if $anchor;
 
 =for comment
 
