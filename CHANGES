@@ -1,3 +1,16 @@
+[Changes for 0.25 - 4 Sep, 2004]
+
+* Use a default pool in compare_base_rev.
+
+* Use svk 0.20's commit --import instead of --import.
+
+* Create our own changesets filter with the constrain on
+  'source_branch_id'.  For some reasons freebsd source repository has a file
+  branched, next revsions on trunk and branch are idential changes. and this confuses
+  the original grouping rules.
+
+* Skip base check for placeholders.
+
 [Changes for 0.24 - 24 Jul, 2004]
 
 * Don't switch between branches, use symlink to make conversion faster.

@@ -1,5 +1,5 @@
 This is the README file for VCP::Dest::svk, the VCP destination driver
-for svn repositories using the SVK module.
+for svn repositories using the SVK API.
 
 * Installation
 
@@ -12,7 +12,7 @@ VCP::Dest::svk uses the stanard perl module install process:
 * Latest version
 
 The latest VCP-Dest-svk could be found on cpan or at:
-http://svn.elixus.org/svnweb/repos/browse/member/clkao/VCP-Dest-svk/
+http://svn.clkao.org/svnweb/member/browse/clkao/VCP-Dest-svk/
 
 * Copyright
 

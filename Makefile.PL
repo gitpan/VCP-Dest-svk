@@ -11,7 +11,7 @@ version_from	('svk.pm');
 
 requires(
         'VCP'   => '0.9',
-	'SVK'   => '0.15',
+	'SVK'   => '0.20',
 );
 include('ExtUtils::AutoInstall');
 auto_install();

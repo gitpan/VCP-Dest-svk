@@ -50,11 +50,12 @@ The directory for branches. default is branches.
 
 =cut
 use strict;
-our $VERSION = '0.24' ;
+our $VERSION = '0.25' ;
 our @ISA = qw( VCP::Dest );
 
 use SVN::Core;
 use SVN::Repos;
+# XXX: 584 doesn't like version requirement here
 use SVK;
 use SVK::XD;
 use SVK::Util qw( md5 );
@@ -210,10 +211,15 @@ sub compare_base_revs {
 
    my ($prefix, $name, $rev ) =
        $self->rev_map->get ( [ $r->source_repo_id, $r->id ] );
+   my $pool = SVN::Pool->new_default;
    my $root = $self->{SVK_REPOS}->fs->revision_root ($rev);
 
-   # dead rev is fine
-   return if -z $source_path && $root->check_path ("$prefix/$name") == $SVN::Node::none;
+   if (-z $source_path) {
+       # dead rev is fine
+       return if $root->check_path ("$prefix/$name") == $SVN::Node::none;
+       # placeholder
+       return if $r->rev_id =~ m/\.0$/;
+   }
 
    open FH, '<', $source_path or die "$!: $source_path" ;
    my $source_digest = md5( \*FH ) ;
@@ -223,7 +229,7 @@ sub compare_base_revs {
    lg "$r checking out ", $r->as_string, " as $prefix/$name\@$rev from svk dest repo";
 
    die( "vcp: base revision\n",
-       $rev->as_string, "\n",
+	$r->as_string, "\n",
        "differs from the last version in the destination p4 repository.\n",
        "    source digest: $source_digest (in ", $source_path, ")\n",
        "    dest. digest:  $dest_digest (in $prefix/$name\@$rev)\n"
@@ -258,8 +264,7 @@ sub handle_rev {
    $self->{SVK_PREV_COMMENT}   = $r->comment;
 
    if ( $r->is_base_rev ) {
-      my $work_path = $r->get_source_file;
-      $self->compare_base_revs( $r, $work_path );
+      $self->compare_base_revs( $r, $r->get_source_file );
       pr_doing;
       return;
    }
@@ -330,33 +335,28 @@ sub commit {
 	    }
 	    symlink ($thisco, $coroot) or die "$thisco -> $coroot: $!";
 	}
-
-	$self->handle_branching ($thisbranch, $revs);
+	$self->handle_branching ($thisbranch, $root, $revs);
+	my $use_anchor;
 	my $copath = $self->work_path ('co');
 	my $anchor = $self->prepare_commit ($thisbranch, $root, $revs);
 	lg "import $thisbranch$anchor $copath$anchor (".(1+$#{$revs})." files)";
-
-	$self->{SVK}->import ('--direct', '--force',
-			      '-m', $revs->[0]->comment || '** no comments **',
-			      $thisbranch.$anchor, $copath.$anchor);
-	debug "import result:\n$self->{SVK_OUTPUT}" if debugging;
-	$self->{SVK}->update ($copath) if $anchor;
-
-=for comment
-
-	$self->{SVK}->status ($copath.$anchor);
-
-	if ($self->{SVK_OUTPUT}) {
-	    debug  "import to /$anchor $copath$anchor";
-	    debug YAML::Dump ($self->{SVK}{xd});
+	while ($anchor && $root->check_path ($thisbranch.$anchor) == $SVN::Node::none) {
+	    (undef,$anchor,undef) = File::Spec->splitpath( $anchor );
+	    $anchor =~ s|/$||g;
+	    $use_anchor = 1;
 	}
-	die "not identical after import to $thisbranch: $self->{SVK_OUTPUT}"
-	    if $self->{SVK_OUTPUT};
 
-=cut
-
+	$anchor = $anchor ? $copath.$anchor : $thisco;
+	my @targets = ($use_anchor || $#{$revs} > 100) ? ($anchor)
+	    : map { "$copath/".$_->name } @$revs;
+	$self->{SVK}->commit ('--direct', '--import',
+			      '-m', $revs->[0]->comment || '** no comments **',
+			      @targets);
+	die $self->{SVK_OUTPUT}.YAML::Dump($self->{SVK}{xd})
+	    unless $self->{SVK_OUTPUT} =~ m'Committed revision';
+	debug "import result:\n$self->{SVK_OUTPUT}" if debugging;
+	$self->{SVK}->update ($thisco);
 	$self->{SVK_LAST_BRANCH} = $thisbranch;
-
     }
 
     my $rev = $fs->youngest_rev;
@@ -404,7 +404,8 @@ sub deduce_branchparent {
     }
 
     if (keys %$branchinfo != 1) {
-	die "complicated branchpoint not handled yet";
+	debug YAML::Dump ($branchinfo);
+	die "complicated branchpoint not handled yet:\n".join("\n", map $_->as_string, @$revs);
     }
 
     # XXX: verify the latest rev is still in range for all revs
@@ -453,8 +454,8 @@ sub handle_branchpoint {
 	}
 	else {
 	    # copy $branchrevs from $branch{from,rev} to co
-	    die "complicated branching at a batch not implemented yet";
-	    $self->handle_branching ($branch, $branchrevs);
+	    die "complicated branching at a batch not implemented yet:\n".join("\n", @$revs);
+	    $self->handle_branching ($branch, $root, $branchrevs);
 	}
 	$self->prepare_commit ($branch, $root, $branchrevs);
     }
@@ -475,8 +476,7 @@ sub prepare_commit {
     for my $r (@$revs) {
 	next if $r->is_placeholder_rev;
 	if (defined $anchor) {
-	    while ($anchor && ("$anchor/" ne substr ($r->name, 0, length ($anchor)+1)
-		   || $root->check_path ("$prefix/$anchor") == $SVN::Node::none)) {
+	    while ($anchor && "$anchor/" ne substr ($r->name, 0, length ($anchor)+1)) {
 		(undef,$anchor,undef) = File::Spec->splitpath( $anchor );
 		$anchor =~ s|/$||g;
 	    }
@@ -499,7 +499,9 @@ sub prepare_commit {
 }
 
 sub handle_branching {
-    my ($self, $prefix, $revs) = @_;
+    my ($self, $prefix, $root, $revs) = @_;
+    my $copied;
+    # XXX: optimize this as the grouped copy
     for my $r (@$revs) {
 	my $pr_id = $r->previous_id;
 	next if empty $pr_id;
@@ -517,18 +519,37 @@ sub handle_branching {
 	next if $pprefix eq $prefix;
 
 	my $dir = $self->mkpdir ($work_path);
-	$self->{SVK}->add ($dir);
+	my $anchor = $r->name;
+	while (1) {
+	    # XXX: file::spec::unix
+	    my (undef,$newanchor,undef) = File::Spec->splitpath( $anchor );
+	    $newanchor =~ s|/$||g;
+	    last unless $root->check_path ("$prefix/$newanchor") == $SVN::Node::none;
+	    $anchor = $newanchor;
+	}
+	$self->{SVK}->add ($self->work_path ('co', $anchor)) unless $anchor eq $r->name;
+	++$copied;
 	$self->{SVK}->copy ('-r', $prev, "$pprefix/$pname", $work_path);
-#	pr "copy from $pprefix/$pname -> $work_path ($prefix)";
+	debug "copy from $pprefix/$pname\@$prev -> $work_path ($prefix)"
+	    if debugging;
     }
+    return $copied;
 }
 
 sub sort_filters {
     my $self = shift;
     require VCP::Filter::map;
     require VCP::Filter::stringedit;
+    require VCP::Filter::changesets;;
 
-    return ( $self->require_change_id_sort( @_ ),
+    return ( @_ && $_[0] eq "change_id" ? () :
+	     VCP::Filter::changesets->new
+	     ( "",
+	       [qw( time                   <=60
+		    user_id                equal
+		    comment                equal
+		    source_branch_id       equal)]
+	     ),
 	     VCP::Filter::stringedit->new
 	     ( "",
 	       [ "user_id,name,labels", "@",   "_at_"   ,
@@ -668,7 +689,7 @@ sub get_source_files {
 =item
 
 Since VCP is not currently available on CPAN, you could get a dist
-with fixes from L:<http://wagner.elixus.org/~clkao/VCP-0.9-clkao.tar.gz>
+with fixes from L<http://wagner.elixus.org/~clkao/VCP-0.9-clkao.tar.gz>
 
 =item
 
