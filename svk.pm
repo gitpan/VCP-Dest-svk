@@ -50,7 +50,7 @@ The directory for branches. default is branches.
 
 =cut
 use strict;
-our $VERSION = '0.28' ;
+our $VERSION = '0.29' ;
 our @ISA = qw( VCP::Dest );
 
 use SVN::Core;
@@ -64,6 +64,7 @@ use VCP::Logger qw( pr lg pr_doing pr_did );
 use VCP::Rev ('iso8601format');
 use VCP::Utils qw( empty is_win32 escape_filename);
 use File::Path ;
+use YAML ();
 use VCP::Debug ':debug' ;
 
 use vars qw( $debug ) ;

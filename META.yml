@@ -1,13 +1,15 @@
-name: VCP-Dest-svk
-version: 0.28
 abstract: VCP destination driver for svn/svk
 author: Chia-liang Kao <clkao@clkao.org>
-license: perl
 distribution_type: module
-requires:
-  VCP: 0.9
-  SVK: 0.20
-no_index:
-  directory:
+generated_by: Module::Install version 0.63
+license: perl
+name: VCP-Dest-svk
+no_index: 
+  directory: 
     - inc
-generated_by: Module::Install version 0.35
+    - t
+requires: 
+  SVK: 0.20
+  VCP: 0.9
+  YAML: 0
+version: 0.29

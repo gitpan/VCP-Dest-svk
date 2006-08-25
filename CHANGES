@@ -1,3 +1,7 @@
+[Changes for 0.29 - 25 Aug, 2006]
+
+* Require YAML explicitly, as svk trunk is using YAML::Syck.
+
 [Changes for 0.28 - 17 Oct, 2004]
 
 * Fetch source on all revisions except 'delete' ones,

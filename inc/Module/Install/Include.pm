@@ -1,13 +1,34 @@
-#line 1 "inc/Module/Install/Include.pm - /usr/local/lib/perl5/site_perl/5.8.5/Module/Install/Include.pm"
-# $File: //depot/cpan/Module-Install/lib/Module/Install/Include.pm $ $Author: autrijus $
-# $Revision: #9 $ $Change: 2288 $ $DateTime: 2004/07/01 04:49:12 $ vim: expandtab shiftwidth=4
-
+#line 1
 package Module::Install::Include;
-use Module::Install::Base; @ISA = qw(Module::Install::Base);
 
-sub include { +shift->admin->include(@_) };
-sub include_deps { +shift->admin->include_deps(@_) };
-sub auto_include { +shift->admin->auto_include(@_) };
-sub auto_include_deps { +shift->admin->auto_include_deps(@_) };
+use strict;
+use Module::Install::Base;
+
+use vars qw{$VERSION $ISCORE @ISA};
+BEGIN {
+	$VERSION = '0.63';
+	$ISCORE  = 1;
+	@ISA     = qw{Module::Install::Base};
+}
+
+sub include {
+	shift()->admin->include(@_);
+}
+
+sub include_deps {
+	shift()->admin->include_deps(@_);
+}
+
+sub auto_include {
+	shift()->admin->auto_include(@_);
+}
+
+sub auto_include_deps {
+	shift()->admin->auto_include_deps(@_);
+}
+
+sub auto_include_dependent_dists {
+	shift()->admin->auto_include_dependent_dists(@_);
+}
 
 1;
